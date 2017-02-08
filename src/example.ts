@@ -1,5 +1,5 @@
 import {Client} from './core/Client';
-import {Remote, Member} from './sharedobject/Remote';
+import {Remote, Member, RemoteObject} from './sharedobject/Remote';
 import {Validators as RV} from './sharedobject/Validators';
 import EventEmitter = require('wolfy87-eventemitter');
 
@@ -7,7 +7,7 @@ var mySlide: HTMLInputElement = <HTMLInputElement>document.getElementById('clien
 var serverSlide: HTMLInputElement = <HTMLInputElement>document.getElementById('server');
 
 @Remote
-class ExampleSyncedRanger extends EventEmitter {
+class ExampleSyncedRanger {
   @Member(RV.isNumericString.isGreatOrEqual(0).isLessOrEqual(100))
   public value: string;
 }
@@ -16,13 +16,13 @@ var c = new Client({
   sharedObjects: [ExampleSyncedRanger]
 });
 
-var myRanger: ExampleSyncedRanger;
-var serverRanger: ExampleSyncedRanger;
+var myRanger: ExampleSyncedRanger&RemoteObject;
+var serverRanger: ExampleSyncedRanger&RemoteObject;
 
-c.on('newObject', (id, object) => {
-  if (id === "clientRange") {
+c.on('newObject', (object) => {
+  if (object.__remoteInstance.id === "clientRange") {
     myRanger = object;
-  } else if (id == "serverRange") {
+  } else if (object.__remoteInstance.id == "serverRange") {
     serverRanger = object;
   }
   if (myRanger && serverRanger) {
@@ -30,10 +30,9 @@ c.on('newObject', (id, object) => {
     mySlide.onchange = function(v) {
       myRanger.value = mySlide.value;
     }
-
-    serverRanger.on('change', function(v) {
-      console.log("changed");
-      serverSlide.value = serverRanger.value;
-    })
   }
 });
+
+c.on('objectChange', (obj) => {
+  serverSlide.value = serverRanger.value;
+})

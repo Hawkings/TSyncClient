@@ -1,11 +1,17 @@
 import {ValidatorChain, Validator} from './Validators';
 
+// TODO: Use this interface instead of using any.
+export interface RemoteObject {
+  __remoteTable;
+  __remoteInstance;
+}
+
 function RemoteMemberGetter(member) {
   return () => this.__remoteInstance.sharedValues[member];
 }
 
 function RemoteValidate(remoteObject: any, member: string, v: any) {
-  var val: Function | [Validator] = remoteObject.__remoteTable.sharedMembers[member];
+  var val: Function |[Validator] = remoteObject.__remoteTable.sharedMembers[member];
   if (typeof val === "function") {
     let v2 = val(v);
     if (typeof v2 === "undefined") {
@@ -76,11 +82,29 @@ export function RemoteUpdateObjectKeyValue(remoteObject: any, member: string, va
   }
 }
 
+export function RemoteUpdateMultipleValues(remoteObject: RemoteObject, obj: any) {
+  var x = {};
+
+  // First: check every value passes Validations
+  for (var member in obj) {
+    if (member in remoteObject.__remoteTable.sharedMembers) {
+       x[member] = RemoteValidate(remoteObject, member, obj[member]);
+      if (typeof x[member] === "undefined") {
+        throw "Value " + obj[member] + " for member " + remoteObject.constructor['name'] + "." + member + "is not valid.";
+      }
+    } else {
+      throw "Object does not contain Remote member " + member;
+    }
+  }
+  // Second: copy all data to object
+  for (var k in obj) {
+    remoteObject.__remoteInstance.sharedValues[k] = obj[k];
+  }
+}
+
 export function Remote(constructor: Function): any {
   if (!('__remoteTable' in constructor.prototype)) {
-    constructor.prototype.__remoteTable = {
-      sharedMembers: {}
-    }
+    throw "No remote members. Use @Member in at least one member";
   }
 
   var x = function() {
@@ -103,12 +127,10 @@ export function Remote(constructor: Function): any {
   }
 
   x.prototype = constructor.prototype;
+  x.prototype.__isRemote = true;
   Object.defineProperty(x, "name", {
     value: constructor["name"]
   })
-
-
-
   return x;
 }
 
@@ -127,6 +149,6 @@ function InstallMemberDecorator(validator: Function | ValidatorChain): Function 
   }
 }
 
-export function Member(validator: Function | ValidatorChain): Function {
-  return InstallMemberDecorator(validator);
+export function Member(validator?: Function | ValidatorChain): Function {
+  return InstallMemberDecorator(validator || ((v) => v));
 }
