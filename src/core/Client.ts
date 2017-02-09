@@ -10,13 +10,6 @@ export class IClientConfig {
 }
 
 export class Client extends EventEmitter {
-  private serverObjects: {
-    [id: string]: {
-      type: string,
-      object: any
-    }
-  }
-
   private sharedObjects: {
     [id: string]: {
       type: string,
@@ -32,7 +25,6 @@ export class Client extends EventEmitter {
   constructor(config: IClientConfig) {
     super();
     this.sharedObjects = {};
-    this.serverObjects = {};
 
     if (config.sharedObjects) {
       config.sharedObjects.forEach((v) => {
@@ -50,42 +42,45 @@ export class Client extends EventEmitter {
       ws.onmessage = (evt) => {
         var msg = evt.data;
         var json = JSON.parse(msg);
+        console.log(json);
         // TODO: doesn't parse packets here, use a driver
         if ('newObjects' in json) {
           for (var id in json.newObjects) {
             var obj = json.newObjects[id];
             var result: RemoteObject = new this.sharedObjectConstructors[obj.type]();
             result.__remoteInstance.id = id;
-            if (obj.path === '/') {
+            if (obj.path !== '') {
               ChangeOwnership(result, false);
-              this.serverObjects[json.id] = {
-                type: json.type,
+              this.sharedObjects[id] = {
+                type: obj.type,
                 object: result
               };
             } else {
+              var self = this;
               // TODO: Check ownership
-              SetWriteDriver(result, (key, value) => {
-                this.packet.objectChanges =
-                this.packet.objectChanges || {};
-                this.packet.objectChanges[id] =
-                this.packet.objectChanges[id] || {};
-                this.packet.objectChanges[id][key] = value;
-                this.triggerUpdates()
+              SetWriteDriver(result, function(key, value) {
+                console.log(this.id);
+                self.packet.objectChanges =
+                self.packet.objectChanges || {};
+                self.packet.objectChanges[this.id] =
+                self.packet.objectChanges[this.id] || {};
+                self.packet.objectChanges[this.id][key] = value;
+                self.triggerUpdates()
               });
-              this.sharedObjects[json.id] = {
-                type: json.type,
+              this.sharedObjects[id] = {
+                type: obj.type,
                 object: result
               };
             }
             this.emit("newObject", result);
           }
         } else if ("objectChanges" in json) {
-          // TODO: Check ownership
           for (var id in json.objectChanges) {
-            var o: RemoteObject = this.serverObjects[json.id].object;
+            console.log(this.sharedObjects, id);
+            var o: RemoteObject = this.sharedObjects[id].object;
             if (o) {
               UpdateMultipleValues(o, json.objectChanges[id]);
-              this.emit('objectChange', json);
+              this.emit('objectChange', o, json.objectChanges[id]);
             }
           }
         }
@@ -104,7 +99,7 @@ export class Client extends EventEmitter {
   }
 
   getServerObjectById(id: string) {
-    return this.serverObjects[id].object;
+    return this.sharedObjects[id].object;
   }
 
   triggerUpdates() {
@@ -128,9 +123,6 @@ export class Client extends EventEmitter {
       console.log('client@newObject');
     }).on('objectDestroy', (obj: RemoteObject) => {
       console.log('server@objectDestroy');
-      // TODO: Notify owner (if still exists) of object
-      // TODO: Remove object from rooms
-      // TODO: Broadcast if object's owner is server
     }).on('joinRoom', (room) => {
       console.log('client@joinRoom');
     }).on('disconnect', () => {
